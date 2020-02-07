@@ -233,7 +233,7 @@ for mp3_filename in mp3_files:
                 # Determine track number
                 track = False
                 for i in range(0, len(mp3_info)):
-                    if ((mp3_info[i].isdigit()) and (len(mp3_info[i])==2)):
+                    if ((mp3_info[i].isdigit()) and ((len(mp3_info[i])==2) or (len(mp3_info[i])==3)) and (i != 0)):
                         track = mp3_info[i]
                         break
                 if (track == False):
@@ -255,7 +255,7 @@ for mp3_filename in mp3_files:
                     title = mp3_info[3]
                     compilation = True
                 else:
-                    ERROR("Error: Position of track in " + mp3_filename + " could not be identified.")
+                    ERROR("Error: Position of track " + mp3_info.index(track) + " in " + mp3_filename + " could not be identified.")
                     break
                 
                 # Get number of total tracks in path
@@ -285,6 +285,8 @@ for mp3_filename in mp3_files:
                     print("Genre: %s" %(genre))
                     print("BPMs: %s" %(bpms))
                     print("Compilation: %s" %(compilation))
+                else:
+                    print(mp3_basename)
                 
                 # Write tags to mp3 file
                 if (__DRY_RUN__ == False):
