@@ -13,11 +13,18 @@ import re
 import time
 import audioread
 import numpy as np
+
+# Fix librosa deprecation issues with numpy
+np.complex = np.complex_
+np.float = float
 import librosa
+
+# Use mutagen for reading tags
 from mutagen.id3 import ID3, ID3NoHeaderError, PictureType, TPE1, TSOP, TPE2, TCOM, TALB, TSOA, TRCK, TIT2, TDRC, TCON, TBPM, TCMP, APIC, error
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Tags, MP4Info, MP4Cover, MP4FreeForm, AtomDataType
 
+# Fix colors on windos
 if sys.platform.lower() == "win32":
 	os.system('color')
 
@@ -83,6 +90,12 @@ class fragile(object):
 # -------------------- Print an error message in red --------------------
 def ERROR(msg):
 	print("\033[91m{}\033[00m" .format(msg), file=sys.stderr)
+
+
+
+# -------------------- Print warning message in yellow --------------------
+def WARNING(msg):
+	print("\033[93m{}\033[00m" .format(msg), file=sys.stderr)
 
 
 
@@ -214,7 +227,7 @@ def mp3_tag(mp3_dirname, mp3_filename, artist, album, track, tracks, title, year
 		imagefile = open(image, 'rb').read()
 		id3.add(APIC(3, 'image/jpeg', 3, 'Cover', imagefile))
 	except:
-		print("Warning. No Cover.jpg in directory " + mp3_dirname + ".")
+		WARNING("Warning. No Cover.jpg in directory " + mp3_dirname + ".")
 	
 	# Save tags to file
 	id3.save(mp3_filename, v2_version=4, v1=2)
@@ -286,7 +299,7 @@ def flac_tag(flac_dirname, flac_filename, artist, album, track, tracks, title, y
 		image.mime = "image/jpeg"
 		id3.add_picture(image)
 	except:
-		print("Warning. No Cover.jpg in directory " + flac_dirname + ".")
+		WARNING("Warning. No Cover.jpg in directory " + flac_dirname + ".")
 	
 	# Save tags to file
 	id3.save(filename=flac_filename, deleteid3=True)
@@ -348,7 +361,7 @@ def m4a_tag(m4a_dirname, m4a_filename, artist, album, track, tracks, title, year
 		with open(str(m4a_dirname + '/Cover.jpg'), 'rb') as f:
 			id3["covr"] = [ MP4Cover(f.read(), imageformat=MP4Cover.FORMAT_JPEG) ]
 	except:
-		print("Warning. No Cover.jpg in directory " + m4a_dirname + ".")
+		WARNING("Warning. No Cover.jpg in directory " + m4a_dirname + ".")
 	
 	# Save tags to file
 	id3.save(m4a_filename)
@@ -361,103 +374,100 @@ def process_audio(audio_filename):
 	audio_dirname = os.path.dirname(audio_filename)
 	audio_suffix = re.sub(pattern='.*\.', repl='', string=str(audio_filename))
 	
-	try:
-		with fragile(audioread.audio_open(audio_filename)) as f:
-			# Test audio file
-			if (__DEBUG__): print('\nFile: %s' %(audio_filename))
-			if (__DEBUG__): print('Info: %i channels, %i Hz, %.1f seconds.' %(f.channels, f.samplerate, f.duration))
-			f.close()
+	with audioread.audio_open(audio_filename) as f:
+		# Test audio file
+		if (__DEBUG__): print('\nFile: %s' %(audio_filename))
+		if (__DEBUG__): print('Info: %i channels, %i Hz, %.1f seconds.' %(f.channels, f.samplerate, f.duration))
+		f.close()
+		
+		# Count BPM
+		if (__BPM_DISABLED__ == False):
+			# Convert audio to WAV
+			bpms = bpm_count(audio_filename)
+			bpms = str(round(bpms, 3))
+		else:
+			bpms = "0";
+		
+		# Update audio tags
+		audio_info = audio_basename.split(" - ")
+		if (len(audio_info) == 4):
+			# Remove unwanted characters
+			audio_info[0] = re.sub(pattern='.*/', repl='', string=audio_info[0])
+			audio_info[-1] = re.sub(pattern='\..*', repl='', string=audio_info[-1])
 			
-			# Count BPM
-			if (__BPM_DISABLED__ == False):
-				# Convert audio to WAV
-				bpms = bpm_count(audio_filename)
-				bpms = str(round(bpms, 3))
-			else:
-				bpms = "0";
-			
-			# Update audio tags
-			audio_info = audio_basename.split(" - ")
-			if (len(audio_info) == 4):
-				# Remove unwanted characters
-				audio_info[0] = re.sub(pattern='.*/', repl='', string=audio_info[0])
-				audio_info[-1] = re.sub(pattern='\..*', repl='', string=audio_info[-1])
-				
-				# Determine track number
-				track = False
-				for i in range(0, len(audio_info)):
-					if ((audio_info[i].isdigit()) and ((len(audio_info[i])==2) or (len(audio_info[i])==3)) and (i != 0)):
-						track = audio_info[i]
-						break
-				if (track == False):
-					ERROR("Error: Track number in " + audio_filename + " could not be identified.")
-					raise fragile.Break
-				
-				# Structure: Artist - Album - Track - Title
-				if (audio_info.index(track) == 2):
-					track_position = 2
-					artist = audio_info[0]
-					album = audio_info[1]
-					title = audio_info[3]
-					compilation = False
-				# Structure: Compilation - Track - Artist - Title
-				elif (audio_info.index(track) == 1):
-					track_position = 1
-					album = audio_info[0]
-					artist = audio_info[2]
-					title = audio_info[3]
-					compilation = True
-				else:
-					ERROR("Error: Position of track " + audio_info.index(track) + " in " + audio_filename + " could not be identified.")
-					raise fragile.Break
-				
-				# Get number of total tracks in path
-				tracks = []
-				audio_dirfiles = sorted(filter(lambda p: p.suffix in {".mp3", ".flac", ".m4a"}, Path(audio_dirname).glob("**/*")))
-				for i in audio_dirfiles:
-					audio_dirfile = os.path.basename(i)
-					audio_dirinfo = audio_dirfile.split(" - ")
-					tracks.append(audio_dirinfo[track_position])
-				tracks = str(track + '/' + max(tracks))
-				
-				# Determine publication date (year)
-				try:
-					year = re.findall('\((.*?)\)', audio_dirname)
-					year = re.sub(r'.* ', '', year[-1])
-				except:
-					print("Warning: Could not extract year information from " + audio_filename + ". Setting to current year.")
-					year = time.strftime("%Y")
-				
-				# Print out tags
-				if (__DEBUG__):
-					print("Artist: %s" %(artist))
-					print("Album: %s" %(album))
-					print("Tracks: %s" %(tracks))
-					print("Title: %s" %(title))
-					print("Year: %s" %(year))
-					print("Genre: %s" %(genre))
-					print("BPMs: %s" %(bpms))
-					print("Compilation: %s" %(compilation))
-				else:
-					print(audio_basename)
-				
-				# Write tags to audio file
-				if (__DRY_RUN__ == False):
-					try:
-						if (audio_suffix == "mp3"):
-							mp3_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
-						elif (audio_suffix == "flac"):
-							flac_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
-						elif (audio_suffix == "m4a"):
-							m4a_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
-					except:
-						ERROR("Error: Failed to write tags to " + audio_filename + ".")
-						raise fragile.Break
-			else:
-				ERROR("Error: Names for tags in file " + audio_filename + " could not be detected.")
+			# Determine track number
+			track = False
+			for i in range(0, len(audio_info)):
+				if ((audio_info[i].isdigit()) and ((len(audio_info[i])==2) or (len(audio_info[i])==3)) and (i != 0)):
+					track = audio_info[i]
+					break
+			if (track == False):
+				ERROR("Error: Track number in " + audio_filename + " could not be identified.")
 				raise fragile.Break
-	except:
-		ERROR("Error: File " + audio_filename + " could not be decoded.")
+			
+			# Structure: Artist - Album - Track - Title
+			if (audio_info.index(track) == 2):
+				track_position = 2
+				artist = audio_info[0]
+				album = audio_info[1]
+				title = audio_info[3]
+				compilation = False
+			# Structure: Compilation - Track - Artist - Title
+			elif (audio_info.index(track) == 1):
+				track_position = 1
+				album = audio_info[0]
+				artist = audio_info[2]
+				title = audio_info[3]
+				compilation = True
+			else:
+				ERROR("Error: Position of track " + audio_info.index(track) + " in " + audio_filename + " could not be identified.")
+				raise fragile.Break
+			
+			# Get number of total tracks in path
+			tracks = []
+			audio_dirfiles = sorted(filter(lambda p: p.suffix in {".mp3", ".flac", ".m4a"}, Path(audio_dirname).glob("**/*")))
+			for i in audio_dirfiles:
+				audio_dirfile = os.path.basename(i)
+				audio_dirinfo = audio_dirfile.split(" - ")
+				tracks.append(audio_dirinfo[track_position])
+			tracks = str(track + '/' + max(tracks))
+			
+			# Determine publication date (year)
+			try:
+				year = re.findall('\((.*?)\)', audio_dirname)
+				year = re.sub(r'.* ', '', year[-1])
+			except:
+				WARNING("Warning: Could not extract year information from " + audio_filename + ". Setting to current year.")
+				year = time.strftime("%Y")
+			
+			# Print out tags
+			if (__DEBUG__):
+				print("Artist: %s" %(artist))
+				print("Album: %s" %(album))
+				print("Tracks: %s" %(tracks))
+				print("Title: %s" %(title))
+				print("Year: %s" %(year))
+				print("Genre: %s" %(genre))
+				print("BPMs: %s" %(bpms))
+				print("Compilation: %s" %(compilation))
+			else:
+				print(audio_basename)
+			
+			# Write tags to audio file
+			if (__DRY_RUN__ == False):
+				try:
+					if (audio_suffix == "mp3"):
+						mp3_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
+					elif (audio_suffix == "flac"):
+						flac_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
+					elif (audio_suffix == "m4a"):
+						m4a_tag(audio_dirname, audio_filename, artist, album, track, tracks, title, year, genre, bpms, compilation)
+				except:
+					ERROR("Error: Failed to write tags to " + audio_filename + ".")
+					raise fragile.Break
+		else:
+			ERROR("Error: Names for tags in file " + audio_filename + " could not be detected.")
+			raise fragile.Break
 
 
 

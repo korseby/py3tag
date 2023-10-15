@@ -6,7 +6,7 @@ To facilitate the tagging of audio files, tags can be generated automatically fr
 For each album of compilation, the script expects an own directory. For albums the scheme `Artist - Album - Tracknumber - Title.mp3` is used whereas for compilations `Album - Tracknumber - Artist - Title.mp3` is used. The script automatically determines the total number of tracks that exist within the directory. Compilation tags used by iTunes are automatically set based on the scheme. If enabled, the script also calculates the BPMs by using the Python library librosa. If `Cover.jpg` exists in the directory it is used as the cover picture.
 
 ## Version
-1.2
+1.3
 
 ## Usage
 
@@ -39,6 +39,9 @@ The following additional Python libraries are needed to run the script. They can
 * mutagen
 
 ## Changes
+
+### Version 1.3:
+- fix librosa deprecation issues with numpy
 
 ### Version 1.2:
 - added flac and m4a support
